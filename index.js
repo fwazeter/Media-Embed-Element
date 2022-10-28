@@ -3,6 +3,7 @@
  * @author Frank Wazeter
  * @description A custom element that speeds up embeds from YouTube & Vimeo & allows customization.
  * @property {string} src The YouTube or Vimeo link to embed.
+ * @property {boolean} lazy Whether to preview image lazily.
  * @property {string} img A specific preview image to use (not in yet).
  */
 export default class MediaEmbed extends HTMLElement {
@@ -16,6 +17,8 @@ export default class MediaEmbed extends HTMLElement {
 		shadow.appendChild( templateContent.cloneNode( true ) )
 		
 		this.render()
+		
+		this.componentDidLoad()
 	}
 	
 	// Allows programmatic access to change or modify tagName
@@ -42,6 +45,14 @@ export default class MediaEmbed extends HTMLElement {
 		return this.setAttribute( 'src', url )
 	}
 	
+	get lazy() {
+		return this.getAttribute('lazy')
+	}
+	
+	set lazy( value ) {
+		value ? this.setAttribute('lazy', '') : this.removeAttribute('lazy')
+	}
+	
 	get img() {
 		return this.getAttribute( 'img' )
 	}
@@ -56,9 +67,15 @@ export default class MediaEmbed extends HTMLElement {
 		
 		// Vimeo uses an API rather than URL for preview image, requiring a check here.
 		if ( embed.type !== 'vimeo' ) {
-			this._findTarget( 'src' ).setAttribute( 'src', `${ embed.image[0] }` )
+			const img = this._findTarget('src')
+			
+			if ( this.hasAttribute('lazy')) {
+				img.removeAttribute('src')
+				img.setAttribute('data-src', `${embed.image[0]}`)
+			} else {
+				img.setAttribute( 'src', `${ embed.image[0] }` )
+			}
 		}
-		
 		
 		this.addEventListener( 'click', () => this._onClick( embed.id, embed.iframe ) )
 		
@@ -103,7 +120,13 @@ export default class MediaEmbed extends HTMLElement {
 					embedData.image.push(
 						result[0]?.thumbnail_small, result[0].thumbnail_medium, result[0].thumbnail_large )
 				} ).then( () => {
-					this._findTarget( 'src' ).setAttribute( 'src', `${ embedData.image[2] }` )
+					const img = this._findTarget('src')
+					if ( this.hasAttribute('lazy')) {
+						img.removeAttribute('src')
+						img.setAttribute('data-src', `${embedData.image[2]}`)
+					} else {
+						img.setAttribute( 'src', `${ embedData.image[2] }` )
+					}
 				} )
 				embedData.iframe =
 					`https://player.vimeo.com/video/${ embedData.id }?autoplay=1&title=0&byline=0&portrait=0`
@@ -141,10 +164,33 @@ export default class MediaEmbed extends HTMLElement {
 		iframe.setAttribute( 'allowfullscreen', '1' )
 		iframe.setAttribute( 'allow', 'accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture' )
 		
-		img.setAttribute( 'hidden', 'true' )
-		icon.setAttribute( 'hidden', 'true' )
+		img.setAttribute( 'hidden', '' )
+		icon.setAttribute( 'hidden', '' )
 		iframe.removeAttribute( 'hidden' )
 		
+	}
+	
+	componentDidLoad() {
+		const img = this._findTarget('src')
+		if (img) {
+			this.observer = new IntersectionObserver(this._onIntersection)
+			this.observer.observe(img)
+		}
+	}
+	
+	_onIntersection = async (entries) => {
+		for ( const entry of entries ) {
+			if (entry.isIntersecting) {
+				if (this.observer) {
+					this.observer.disconnect()
+				}
+			}
+			
+			if (entry.target.getAttribute('data-src')) {
+				entry.target.setAttribute('src', entry.target.getAttribute('data-src'))
+				entry.target.removeAttribute('data-src')
+			}
+		}
 	}
 	
 	templateLoader() {
@@ -155,6 +201,7 @@ export default class MediaEmbed extends HTMLElement {
 	
 	connectedCallback() {
 		this.render()
+		
 	}
 	
 	attributeChangedCallback() {
@@ -209,7 +256,7 @@ defaultTemplate.innerHTML = `
 			block-size: 25%;
 		}
 	</style>
-		<img data-target="${ MediaEmbed.tagName }.src" />
+		<img data-target="${ MediaEmbed.tagName }.src" alt="Video preview thumbnail - click to play" />
 		<svg viewBox="0 0 25 25" fill="var(--color)" xmlns="http://www.w3.org/2000/svg" data-target="${ MediaEmbed.tagName }.icon">
 			<path d="M21.8 8s-.195-1.377-.795-1.984c-.76-.797-1.613-.8-2.004-.847-2.798-.203-6.996-.203-6.996-.203h-.01s-4.197 0-6.996.202c-.39.046-1.242.05-2.003.846C2.395 6.623 2.2 8 2.2 8S2 9.62 2 11.24v1.517c0 1.618.2 3.237.2 3.237s.195 1.378.795 1.985c.76.797 1.76.77 2.205.855 1.6.153 6.8.2 6.8.2s4.203-.005 7-.208c.392-.047 1.244-.05 2.005-.847.6-.607.795-1.985.795-1.985s.2-1.618.2-3.237v-1.517C22 9.62 21.8 8 21.8 8zM9.935 14.595v-5.62l5.403 2.82-5.403 2.8z" />
 		</svg>
